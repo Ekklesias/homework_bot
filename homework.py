@@ -1,11 +1,12 @@
-import telegram
-import time
-import requests
 import logging
 import os
+import requests
 import sys
+import time
 from dotenv import load_dotenv
 from http import HTTPStatus
+
+import telegram
 
 import exceptions
 
@@ -62,6 +63,7 @@ def get_api_answer(timestamp):
         'params': {'from_date': timestamp},
     }
     try:
+        logging.info('Начало запроса к API')
         response = requests.get(**params_request)
         if response.status_code != HTTPStatus.OK:
             raise exceptions.InvalidResponseCode(
@@ -79,22 +81,24 @@ def get_api_answer(timestamp):
 
 def check_response(response):
     """Проверяет ответ API на соответствие документации."""
-    try:
-        homework = response['homeworks']
-    except KeyError as error:
-        logging.error(f'Ошибка доступа по ключу homeworks: {error}')
-    if not isinstance(homework, list):
-        logging.error('Homeworks не типа list')
+    if not isinstance(response, dict):
+        raise TypeError('response не типа dict')
+    if 'homeworks' not in response:
+        raise exceptions.EmptyResponseError('От API пришёл пустой ответ.')
+    if 'current_date' not in response:
+        raise exceptions.EmptyResponseError('От API пришёл пустой ответ.')
+    homeworks = response['homeworks']
+    if not isinstance(homeworks, list):
         raise TypeError('Homeworks не типа list')
-    return homework
+    return homeworks
 
 
 def parse_status(homework):
     """Извлекает из инфы о конкретной домашней работе статус этой работы."""
     if 'homework_name' not in homework:
         raise KeyError('В ответе отсутсвует ключ homework_name')
-    homework_name = homework.get("homework_name")
-    homework_status = homework.get("status")
+    homework_name = homework.get('homework_name')
+    homework_status = homework.get('status')
     if homework_status not in HOMEWORK_VERDICTS:
         raise ValueError(f'Некорректный статус работы - {homework_status}')
     return (
@@ -132,10 +136,6 @@ def main():
                 prev_report = current_report.copy()
             else:
                 logger.debug('Нет новых статусов работы')
-
-        except exceptions.NotForSendError as error:
-            logger.error(f'Ошибка {error}')
-
         except Exception as error:
             error_text = f'Ошибка {error}.'
             logger.error(error, exc_info=True)
@@ -143,7 +143,6 @@ def main():
             if current_report != prev_report:
                 send_message(bot=bot, message=error_text)
                 prev_report = current_report.copy()
-
         finally:
             time.sleep(RETRY_PERIOD)
 
